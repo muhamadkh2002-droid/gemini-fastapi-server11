@@ -1,20 +1,30 @@
 import os
 import psutil
 from fastapi import FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from google import genai
 from google.genai.errors import APIError
 
 app = FastAPI(title="Gemini Proxy Server")
 
-# 1. التحقق من مفتاح البيئة
+# 1. إضافة middleware لـ CORS للسماح بالطلبات من واجهة التطبيق/المعاينة
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 2. التحقق من مفتاح البيئة
 api_key = os.environ.get("GEMINI_API_KEY")
 if not api_key:
     raise RuntimeError("مفتاح GEMINI_API_KEY غير معرف في متغيّرات البيئة.")
 
 client = genai.Client(api_key=api_key)
 
-# 2. النموذج الأساسي المطلوب
+# 3. النموذج الأساسي المطلوب
 MODEL_NAME = "gemini-3.6-flash"
 
 # نماذج البيانات المدخلة والمخرجة
@@ -58,9 +68,9 @@ def chat_endpoint(request: ChatRequest):
         return ChatResponse(response=response.text)
 
     except APIError as e:
-        # إذا لم يكن النموذج متوفراً أو حدث خطأ من API، محاولة الاتصال بالنموذج البديل
+        # محاولة الاتصال بالنموذج البديل في حال تعثر النموذج الرئيسي
         try:
-            fallback_chat = client.chats.create(model="gemini-2.0-flash")
+            fallback_chat = client.chats.create(model="gemini-2.5-flash")
             response = fallback_chat.send_message(request.message)
             user_sessions[request.user_id] = fallback_chat
             return ChatResponse(response=response.text)
