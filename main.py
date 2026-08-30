@@ -11,7 +11,6 @@ from google.genai.errors import APIError
 
 app = FastAPI(title="Gemini Proxy Server")
 
-# 1. إضافة middleware لـ CORS للسماح بالطلبات من واجهة التطبيق
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,21 +19,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2. التحقق من مفتاح البيئة
 api_key = os.environ.get("GEMINI_API_KEY")
 if not api_key:
     raise RuntimeError("مفتاح GEMINI_API_KEY غير معرف في متغيّرات البيئة.")
 
 client = genai.Client(api_key=api_key)
 
-# 3. النموذج الأساسي لدعم النصوص والصور
-MODEL_NAME = "gemini-2.5-flash"
+# التحديث لاسم النموذج الجديد المطلوب
+MODEL_NAME = "gemini-3.6-flash"
 
-# نماذج البيانات المدخلة والمخرجة
 class ChatRequest(BaseModel):
     message: str
-    image_base64: Optional[str] = None  # نص الصورة المشفر بـ Base64 (اختياري)
-    mime_type: Optional[str] = "image/jpeg"  # نوع الصورة (image/png, image/jpeg, ...)
+    image_base64: Optional[str] = None
+    mime_type: Optional[str] = "image/jpeg"
     user_id: str = "default_user"
     reset_session: bool = False
 
@@ -42,7 +39,6 @@ class ChatResponse(BaseModel):
     response: str
     status: str = "success"
 
-# تخزين جلسات المحادثة في الذاكرة
 user_sessions = {}
 
 @app.get("/api/status")
@@ -61,18 +57,13 @@ def get_status():
 @app.post("/api/chat", response_model=ChatResponse)
 def chat_endpoint(request: ChatRequest):
     try:
-        # إنشاء جلسة جديدة إذا طلب المستخدم أو إذا لم تكن موجودة
         if request.reset_session or request.user_id not in user_sessions:
             user_sessions[request.user_id] = client.chats.create(model=MODEL_NAME)
         
         chat = user_sessions[request.user_id]
-        
-        # تجهيز قائمة محتويات الرسالة
         contents = []
 
-        # في حال تم إرسال صورة مع الطلب
         if request.image_base64:
-            # فك تشفير الصورة وتحويلها إلى Part مناسب للـ SDK الجديد
             image_bytes = base64.b64decode(request.image_base64)
             image_part = types.Part.from_bytes(
                 data=image_bytes,
@@ -80,18 +71,14 @@ def chat_endpoint(request: ChatRequest):
             )
             contents.append(image_part)
 
-        # إضافة نص الرسالة/طلب التعديل
         contents.append(request.message)
-        
-        # إرسال الرسالة والصورة إلى Gemini
         response = chat.send_message(contents)
         
         return ChatResponse(response=response.text)
 
     except APIError as e:
-        # محاولة الاتصال بالنموذج البديل في حال تعثر النموذج الرئيسي
         try:
-            fallback_chat = client.chats.create(model="gemini-2.5-flash")
+            fallback_chat = client.chats.create(model="gemini-3.6-flash")
             
             contents = []
             if request.image_base64:
